@@ -4,17 +4,37 @@
 <meta charset="UTF-8">
 <title>Oral Intake Log</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-
 <link rel="manifest" href="manifest.json">
 
 <style>
 body { font-family: system-ui; background:#f5f7fa; padding:10px; }
-h3 { text-align:center; }
-input, button { padding:6px; margin:4px 0; width:100%; }
+h3 { text-align:center; margin-bottom:6px; }
+
+input, select, button {
+  width:100%; padding:6px; margin:4px 0; font-size:14px;
+}
 button { background:#2563eb; color:#fff; border:none; border-radius:4px; }
-table { width:100%; border-collapse:collapse; background:#fff; margin-top:10px; }
-th, td { border:1px solid #cbd5e1; padding:6px; font-size:13px; }
+
+table {
+  width:100%; border-collapse:collapse; background:#fff; margin-top:10px;
+}
+th, td {
+  border:1px solid #cbd5e1; padding:6px; font-size:13px;
+}
 th { background:#e2e8f0; }
+
+.date-header {
+  background:#dbeafe; font-weight:600; cursor:pointer;
+}
+.total-row {
+  background:#f0fdf4; font-weight:600;
+}
+.hidden { display:none; }
+
+td[contenteditable] { background:#fefce8; }
+.delete { background:#9ca3af; font-size:11px; padding:3px 6px; }
+
+.center { text-align:center; }
 </style>
 </head>
 
@@ -22,17 +42,24 @@ th { background:#e2e8f0; }
 
 <h3>Oral Intake Log</h3>
 
-<input id="date" type="date">
-<input id="time" type="time">
+<!-- INPUT -->
+<input type="date" id="date">
+<input type="time" id="time">
 <input id="food" placeholder="Food">
-<input id="qty" placeholder="Quantity (10-12, 1/2)">
-<input id="unit" placeholder="Unit (Bowl, ml)">
-<button onclick="add()">Add Entry</button>
+<input id="qty" placeholder="Quantity (10-12, 1/2, 1+1/2)">
+<select id="unit">
+  <option>Bowl</option>
+  <option>ml</option>
+  <option>Spoons</option>
+  <option>Piece</option>
+</select>
+<input id="notes" placeholder="Notes (e.g. water 20 ml)">
+<button onclick="addEntry()">Add Entry</button>
 
-<div id="list"></div>
+<div id="report"></div>
 
 <script>
-/* ---------- IndexedDB (SAFE STORAGE) ---------- */
+/* ================== IndexedDB ================== */
 let db;
 const req = indexedDB.open("oralDB", 1);
 req.onupgradeneeded = e => {
@@ -44,25 +71,39 @@ req.onsuccess = e => {
   render();
 };
 
-/* ---------- Helpers ---------- */
+/* ================== Quantity parsing ================== */
 function parseQty(q) {
   if (!q) return 0;
-  q = q.replace(/\s/g,"");
+  q = q.toLowerCase().replace(/\s/g,"");
+
   if (/^\d+\/\d+$/.test(q)) {
-    let [a,b]=q.split("/").map(Number);
-    return a/b;
+    const [a,b] = q.split("/").map(Number);
+    return b ? a/b : 0;
   }
+
   if (q.includes("-")) {
-    let [a,b]=q.split("-").map(Number);
-    return (a+b)/2;
+    const [a,b] = q.split("-").map(Number);
+    if (!isNaN(a) && !isNaN(b)) return (a+b)/2;
   }
+
+  if (q.includes("+")) {
+    return q.split("+").reduce((s,v)=>s+(parseQty(v)||0),0);
+  }
+
   return Number(q)||0;
 }
 
-/* ---------- Add ---------- */
-function add() {
+/* ================== Water from notes ================== */
+function parseWater(notes) {
+  if (!notes) return 0;
+  const m = notes.match(/(\d+)\s*ml/i);
+  return m ? Number(m[1]) : 0;
+}
+
+/* ================== Add ================== */
+function addEntry() {
   if (!date.value || !time.value || !food.value || !qty.value) {
-    alert("Fill all fields");
+    alert("Date, time, food and quantity required");
     return;
   }
   const tx = db.transaction("log","readwrite");
@@ -72,37 +113,104 @@ function add() {
     time: time.value,
     food: food.value,
     qty: qty.value,
-    unit: unit.value
+    unit: unit.value.toLowerCase(),
+    notes: notes.value
   });
   tx.oncomplete = render;
 }
 
-/* ---------- Render ---------- */
-function render() {
-  const tx = db.transaction("log","readonly");
+/* ================== Inline save ================== */
+function inlineSave(el) {
+  const id = Number(el.dataset.id);
+  const field = el.dataset.field;
+  const tx = db.transaction("log","readwrite");
   const store = tx.objectStore("log");
-  const req = store.getAll();
-  req.onsuccess = () => {
-    const data = req.result.sort((a,b)=>b.date.localeCompare(a.date));
-    if (!data.length) {
-      list.innerHTML="<p>No data</p>";
-      return;
-    }
-    let html="<table><tr><th>Date</th><th>Food</th><th>Qty</th><th>Unit</th></tr>";
-    data.forEach(e=>{
-      html+=`<tr>
-        <td>${e.date} ${e.time}</td>
-        <td>${e.food}</td>
-        <td>${parseQty(e.qty)}</td>
-        <td>${e.unit}</td>
-      </tr>`;
-    });
-    html+="</table>";
-    list.innerHTML=html;
+  store.get(id).onsuccess = e => {
+    const row = e.target.result;
+    row[field] = el.innerText.trim();
+    store.put(row);
   };
 }
 
-/* ---------- Register Service Worker ---------- */
+/* ================== Delete ================== */
+function del(id) {
+  const tx = db.transaction("log","readwrite");
+  tx.objectStore("log").delete(id);
+  tx.oncomplete = render;
+}
+
+/* ================== Toggle ================== */
+function toggle(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle("hidden");
+}
+
+/* ================== Render ================== */
+function render() {
+  const tx = db.transaction("log","readonly");
+  const store = tx.objectStore("log");
+  store.getAll().onsuccess = e => {
+    const data = e.target.result
+      .sort((a,b)=>b.date.localeCompare(a.date)||b.time.localeCompare(a.time));
+
+    if (!data.length) {
+      report.innerHTML="<p>No data</p>";
+      return;
+    }
+
+    let html="<table>";
+    let cur="", totals={}, water=0, first=true;
+
+    data.forEach(r=>{
+      if (r.date !== cur) {
+        if (cur) {
+          html += totalRow(totals, water) + "</tbody>";
+        }
+        cur = r.date;
+        totals={}; water=0;
+        const id="d"+cur;
+        html += `
+          <tr class="date-header" onclick="toggle('${id}')">
+            <td colspan="6">📅 ${cur}</td>
+          </tr>
+          <tbody id="${id}" class="${first?'':'hidden'}">
+          <tr>
+            <th>Time</th><th>Food</th><th>Qty</th><th>Unit</th><th>Notes</th><th>Del</th>
+          </tr>`;
+        first=false;
+      }
+
+      const qn = parseQty(r.qty);
+      const u = r.unit.toLowerCase();
+      totals[u]=(totals[u]||0)+qn;
+      water+=parseWater(r.notes);
+
+      html += `
+        <tr>
+          <td contenteditable data-id="${r.id}" data-field="time" oninput="inlineSave(this)">${r.time}</td>
+          <td contenteditable data-id="${r.id}" data-field="food" oninput="inlineSave(this)">${r.food}</td>
+          <td contenteditable data-id="${r.id}" data-field="qty" oninput="inlineSave(this)">${r.qty}</td>
+          <td contenteditable data-id="${r.id}" data-field="unit" oninput="inlineSave(this)">${r.unit}</td>
+          <td contenteditable data-id="${r.id}" data-field="notes" oninput="inlineSave(this)">${r.notes||""}</td>
+          <td class="center"><button class="delete" onclick="del(${r.id})">✖</button></td>
+        </tr>`;
+    });
+
+    html += totalRow(totals, water) + "</tbody></table>";
+    report.innerHTML = html;
+  };
+}
+
+function totalRow(t, water) {
+  const sums = Object.entries(t)
+    .map(([u,v])=>`${v.toFixed(1)} ${u}`)
+    .join(" | ");
+  return `<tr class="total-row"><td colspan="6">
+    Total: ${sums}${water?` | Water ${water} ml`:''}
+  </td></tr>`;
+}
+
+/* ================== Service Worker ================== */
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js");
 }
