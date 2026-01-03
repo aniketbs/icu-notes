@@ -8,32 +8,19 @@
 
 <style>
 body { font-family: system-ui; background:#f5f7fa; padding:10px; }
-h3 { text-align:center; margin-bottom:6px; }
-
+h3 { text-align:center; }
 input, select, button {
   width:100%; padding:6px; margin:4px 0; font-size:14px;
 }
-button { background:#2563eb; color:#fff; border:none; border-radius:4px; }
-
-table {
-  width:100%; border-collapse:collapse; background:#fff; margin-top:10px;
-}
-th, td {
-  border:1px solid #cbd5e1; padding:6px; font-size:13px;
-}
+button { background:#2563eb; color:white; border:none; border-radius:4px; }
+table { width:100%; border-collapse:collapse; background:white; margin-top:10px; }
+th, td { border:1px solid #cbd5e1; padding:6px; font-size:13px; }
 th { background:#e2e8f0; }
-
-.date-header {
-  background:#dbeafe; font-weight:600; cursor:pointer;
-}
-.total-row {
-  background:#f0fdf4; font-weight:600;
-}
+.date-header { background:#dbeafe; font-weight:600; cursor:pointer; }
+.total-row { background:#f0fdf4; font-weight:600; }
 .hidden { display:none; }
-
 td[contenteditable] { background:#fefce8; }
-.delete { background:#9ca3af; font-size:11px; padding:3px 6px; }
-
+.delete { font-size:11px; padding:2px 6px; background:#9ca3af; }
 .center { text-align:center; }
 </style>
 </head>
@@ -42,178 +29,272 @@ td[contenteditable] { background:#fefce8; }
 
 <h3>Oral Intake Log</h3>
 
-<!-- INPUT -->
+<input id="search" placeholder="Search food / notes / date" oninput="render()">
+
 <input type="date" id="date">
 <input type="time" id="time">
-<input id="food" placeholder="Food">
+
+<select id="foodSelect" onchange="food.value=this.value">
+  <option value="">Select food</option>
+  <option>Biscuit</option>
+  <option>Water</option>
+  <option>Sheera</option>
+  <option>Upma</option>
+  <option>Dal Khichdi</option>
+  <option>Dal Bhat</option>
+  <option>Nachni</option>
+  <option>Khajur Juice</option>
+  <option>Apple Juice</option>
+  <option>Chiku Juice</option>
+  <option>Anjeer Juice</option>
+  <option>Mix Juice</option>
+  <option>Protein Powder</option>
+  <option>Idli</option>
+  <option>Other</option>
+</select>
+
+<input id="food" placeholder="Food (auto-filled or type)">
 <input id="qty" placeholder="Quantity (10-12, 1/2, 1+1/2)">
 <select id="unit">
   <option>Bowl</option>
-  <option>ml</option>
   <option>Spoons</option>
+  <option>ml</option>
   <option>Piece</option>
 </select>
-<input id="notes" placeholder="Notes (e.g. water 20 ml)">
-<button onclick="addEntry()">Add Entry</button>
+<input id="notes" placeholder="Notes (water 20 ml)">
+<button onclick="addEntry()">Add</button>
 
 <div id="report"></div>
 
 <script>
-/* ================== IndexedDB ================== */
+/* ================= DB ================= */
 let db;
-const req = indexedDB.open("oralDB", 1);
-req.onupgradeneeded = e => {
-  db = e.target.result;
-  db.createObjectStore("log", { keyPath: "id" });
+const req = indexedDB.open("oralDB",1);
+req.onupgradeneeded=e=>{
+  db=e.target.result;
+  db.createObjectStore("log",{keyPath:"id"});
 };
-req.onsuccess = e => {
-  db = e.target.result;
+req.onsuccess=e=>{
+  db=e.target.result;
+  autoImport();
   render();
 };
 
-/* ================== Quantity parsing ================== */
-function parseQty(q) {
-  if (!q) return 0;
-  q = q.toLowerCase().replace(/\s/g,"");
-
-  if (/^\d+\/\d+$/.test(q)) {
-    const [a,b] = q.split("/").map(Number);
-    return b ? a/b : 0;
+/* ================= Utils ================= */
+function parseQty(q){
+  if(!q) return 0;
+  q=q.toLowerCase().replace(/\s/g,"");
+  if(q.includes("-")){
+    const[a,b]=q.split("-").map(Number);
+    return(a+b)/2;
   }
-
-  if (q.includes("-")) {
-    const [a,b] = q.split("-").map(Number);
-    if (!isNaN(a) && !isNaN(b)) return (a+b)/2;
-  }
-
-  if (q.includes("+")) {
+  if(q.includes("+")){
     return q.split("+").reduce((s,v)=>s+(parseQty(v)||0),0);
   }
-
+  if(q.includes("/")){
+    const[a,b]=q.split("/").map(Number);
+    return b?a/b:0;
+  }
   return Number(q)||0;
 }
-
-/* ================== Water from notes ================== */
-function parseWater(notes) {
-  if (!notes) return 0;
-  const m = notes.match(/(\d+)\s*ml/i);
-  return m ? Number(m[1]) : 0;
+function parseWater(n){
+  const m=n?.match(/(\d+)\s*ml/i);
+  return m?Number(m[1]):0;
 }
 
-/* ================== Add ================== */
-function addEntry() {
-  if (!date.value || !time.value || !food.value || !qty.value) {
-    alert("Date, time, food and quantity required");
-    return;
-  }
-  const tx = db.transaction("log","readwrite");
+/* ================= Add ================= */
+function addEntry(){
+  if(!date.value||!time.value||!food.value||!qty.value) return;
+  const tx=db.transaction("log","readwrite");
   tx.objectStore("log").put({
-    id: Date.now(),
-    date: date.value,
-    time: time.value,
-    food: food.value,
-    qty: qty.value,
-    unit: unit.value.toLowerCase(),
-    notes: notes.value
+    id:Date.now(),
+    date:date.value,
+    time:time.value,
+    food:food.value,
+    qty:qty.value,
+    unit:unit.value.toLowerCase(),
+    notes:notes.value
   });
-  tx.oncomplete = render;
+  tx.oncomplete=render;
 }
 
-/* ================== Inline save ================== */
-function inlineSave(el) {
-  const id = Number(el.dataset.id);
-  const field = el.dataset.field;
-  const tx = db.transaction("log","readwrite");
-  const store = tx.objectStore("log");
-  store.get(id).onsuccess = e => {
-    const row = e.target.result;
-    row[field] = el.innerText.trim();
-    store.put(row);
+/* ================= Inline Save ================= */
+function save(el){
+  const id=Number(el.dataset.id);
+  const f=el.dataset.field;
+  const tx=db.transaction("log","readwrite");
+  const s=tx.objectStore("log");
+  s.get(id).onsuccess=e=>{
+    const r=e.target.result;
+    r[f]=el.innerText.trim();
+    s.put(r);
   };
 }
 
-/* ================== Delete ================== */
-function del(id) {
-  const tx = db.transaction("log","readwrite");
+/* ================= Delete ================= */
+function del(id){
+  const tx=db.transaction("log","readwrite");
   tx.objectStore("log").delete(id);
-  tx.oncomplete = render;
+  tx.oncomplete=render;
 }
 
-/* ================== Toggle ================== */
-function toggle(id) {
-  const el = document.getElementById(id);
-  el.classList.toggle("hidden");
+/* ================= Toggle ================= */
+function toggle(id){
+  document.getElementById(id).classList.toggle("hidden");
 }
 
-/* ================== Render ================== */
-function render() {
-  const tx = db.transaction("log","readonly");
-  const store = tx.objectStore("log");
-  store.getAll().onsuccess = e => {
-    const data = e.target.result
+/* ================= Render ================= */
+function render(){
+  const q=search.value.toLowerCase();
+  const tx=db.transaction("log","readonly");
+  tx.objectStore("log").getAll().onsuccess=e=>{
+    let data=e.target.result
+      .filter(r=>`${r.date} ${r.food} ${r.notes}`.toLowerCase().includes(q))
       .sort((a,b)=>b.date.localeCompare(a.date)||b.time.localeCompare(a.time));
 
-    if (!data.length) {
-      report.innerHTML="<p>No data</p>";
-      return;
-    }
+    if(!data.length){report.innerHTML="<p>No data</p>";return;}
 
-    let html="<table>";
-    let cur="", totals={}, water=0, first=true;
-
+    let h="<table>",cur="",tot={},water=0,first=true;
     data.forEach(r=>{
-      if (r.date !== cur) {
-        if (cur) {
-          html += totalRow(totals, water) + "</tbody>";
-        }
-        cur = r.date;
-        totals={}; water=0;
+      if(r.date!==cur){
+        if(cur) h+=totalRow(tot,water)+"</tbody>";
+        cur=r.date; tot={}; water=0;
         const id="d"+cur;
-        html += `
-          <tr class="date-header" onclick="toggle('${id}')">
-            <td colspan="6">📅 ${cur}</td>
-          </tr>
-          <tbody id="${id}" class="${first?'':'hidden'}">
-          <tr>
-            <th>Time</th><th>Food</th><th>Qty</th><th>Unit</th><th>Notes</th><th>Del</th>
-          </tr>`;
+        h+=`
+        <tr class="date-header" onclick="toggle('${id}')">
+          <td colspan="6">📅 ${cur}</td>
+        </tr>
+        <tbody id="${id}" class="${first?'':'hidden'}">
+        <tr><th>Time</th><th>Food</th><th>Qty</th><th>Unit</th><th>Notes</th><th>Del</th></tr>`;
         first=false;
       }
-
-      const qn = parseQty(r.qty);
-      const u = r.unit.toLowerCase();
-      totals[u]=(totals[u]||0)+qn;
-      water+=parseWater(r.notes);
-
-      html += `
-        <tr>
-          <td contenteditable data-id="${r.id}" data-field="time" oninput="inlineSave(this)">${r.time}</td>
-          <td contenteditable data-id="${r.id}" data-field="food" oninput="inlineSave(this)">${r.food}</td>
-          <td contenteditable data-id="${r.id}" data-field="qty" oninput="inlineSave(this)">${r.qty}</td>
-          <td contenteditable data-id="${r.id}" data-field="unit" oninput="inlineSave(this)">${r.unit}</td>
-          <td contenteditable data-id="${r.id}" data-field="notes" oninput="inlineSave(this)">${r.notes||""}</td>
-          <td class="center"><button class="delete" onclick="del(${r.id})">✖</button></td>
-        </tr>`;
+      tot[r.unit]=(tot[r.unit]||0)+parseQty(r.qty);
+      water+=parseWater(r.notes||"");
+      h+=`
+      <tr>
+        <td contenteditable data-id="${r.id}" data-field="time" oninput="save(this)">${r.time}</td>
+        <td contenteditable data-id="${r.id}" data-field="food" oninput="save(this)">${r.food}</td>
+        <td contenteditable data-id="${r.id}" data-field="qty" oninput="save(this)">${r.qty}</td>
+        <td contenteditable data-id="${r.id}" data-field="unit" oninput="save(this)">${r.unit}</td>
+        <td contenteditable data-id="${r.id}" data-field="notes" oninput="save(this)">${r.notes||""}</td>
+        <td class="center"><button class="delete" onclick="del(${r.id})">✖</button></td>
+      </tr>`;
     });
-
-    html += totalRow(totals, water) + "</tbody></table>";
-    report.innerHTML = html;
+    h+=totalRow(tot,water)+"</tbody></table>";
+    report.innerHTML=h;
   };
 }
 
-function totalRow(t, water) {
-  const sums = Object.entries(t)
-    .map(([u,v])=>`${v.toFixed(1)} ${u}`)
-    .join(" | ");
+function totalRow(t,w){
   return `<tr class="total-row"><td colspan="6">
-    Total: ${sums}${water?` | Water ${water} ml`:''}
+  Total: ${Object.entries(t).map(([u,v])=>`${v.toFixed(1)} ${u}`).join(" | ")}
+  ${w?`| Water ${w} ml`:''}
   </td></tr>`;
 }
 
-/* ================== Service Worker ================== */
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js");
+/* ================= AUTO IMPORT (ONCE) ================= */
+
+<script>
+function autoImport(){
+  const tx=db.transaction("log","readonly");
+  tx.objectStore("log").count().onsuccess=e=>{
+    if(e.target.result>0) return;
+
+    const rows = [
+      /* 23-12-2025 */
+      ["2025-12-23","11:00","Biscuit","1","piece",""],
+      ["2025-12-23","11:00","Water","20","ml",""],
+      ["2025-12-23","13:45","Khajur Juice","0.5","bowl",""],
+      ["2025-12-23","13:45","Water","3","spoons",""],
+      ["2025-12-23","17:00","Biscuit","1","piece",""],
+      ["2025-12-23","17:00","Water","20","ml",""],
+      ["2025-12-23","20:30","Apple + Chiku Juice","7","spoons",""],
+
+      /* 24-12-2025 */
+      ["2025-12-24","12:00","Biscuit","1","piece",""],
+      ["2025-12-24","12:00","Water","2.5","spoons",""],
+      ["2025-12-24","14:15","Date + Nachni Juice","15.5","spoons",""],
+      ["2025-12-24","17:30","Kaju Paste","11","spoons",""],
+      ["2025-12-24","17:30","Water","4.5","spoons",""],
+      ["2025-12-24","21:00","Dal Khichdi","0.5","bowl",""],
+
+      /* 25-12-2025 */
+      ["2025-12-25","14:00","Khajur Juice","40","ml",""],
+      ["2025-12-25","18:00","Biscuit","1","piece",""],
+      ["2025-12-25","18:00","Water","3","spoons",""],
+      ["2025-12-25","21:45","Upma","7.5","spoons",""],
+
+      /* 26-12-2025 */
+      ["2025-12-26","11:45","Dal Bhat","7","spoons",""],
+      ["2025-12-26","14:30","Upma","13.5","spoons",""],
+      ["2025-12-26","20:30","Dal Khichdi","17.5","spoons",""],
+
+      /* 27-12-2025 */
+      ["2025-12-27","13:00","Shira","22.5","spoons",""],
+      ["2025-12-27","15:30","Nachni + Pej","22.5","spoons",""],
+      ["2025-12-27","17:30","Upma","11","spoons",""],
+      ["2025-12-27","21:00","Dal Bhat","0.5","bowl",""],
+
+      /* 28-12-2025 */
+      ["2025-12-28","11:00","Shira","1","bowl","Water 20 ml"],
+      ["2025-12-28","14:00","Dal Bhat","0.5","bowl","Water 20 ml"],
+      ["2025-12-28","15:30","Protein Powder","1","bowl","Water 20 ml"],
+      ["2025-12-28","19:30","Upma + Apple Juice","1","bowl","Water 20 ml"],
+
+      /* 29-12-2025 */
+      ["2025-12-29","10:30","Shira","1","bowl","Water 10 ml"],
+      ["2025-12-29","13:00","Mix Chiku+Beet+Apple","1.5","bowl","Water 20 ml"],
+      ["2025-12-29","17:00","Upma + Apple Juice","1.5","bowl","Water 20 ml"],
+      ["2025-12-29","21:30","Nachni + Chiku Juice","1","bowl","Water 30 ml"],
+
+      /* 30-12-2025 */
+      ["2025-12-30","08:30","Shira","1","bowl","Water 10 ml"],
+      ["2025-12-30","11:30","Oral Remaining RT Tube","2.5","spoons",""],
+      ["2025-12-30","15:15","Bhat","11","spoons","Water 20 ml"],
+      ["2025-12-30","17:15","Juice","1","bowl","Water 20 ml"],
+      ["2025-12-30","21:30","Dal Khichdi + Khajur Juice","1.5","bowl","Water 30 ml"],
+
+      /* 31-12-2025 */
+      ["2025-12-31","08:30","Shira","1","bowl","Water 10 ml"],
+      ["2025-12-31","11:30","Mix Juice","1.5","bowl","Water 10 ml"],
+      ["2025-12-31","14:30","Nachni + Juice","1","bowl","Water 10 ml"],
+      ["2025-12-31","17:15","Apple Juice","1.5","bowl","Water 10 ml"],
+      ["2025-12-31","21:30","Dal Khichdi + Khajur Juice","1","bowl","Water 10 ml"],
+
+      /* 01-01-2026 */
+      ["2026-01-01","09:30","Upma","5.5","spoons","Water 5 ml"],
+      ["2026-01-01","11:30","Sheera + Apple+Chiku Juice","1.5","bowl",""],
+      ["2026-01-01","15:30","Idli + Khajur Juice","1.5","bowl",""],
+      ["2026-01-01","18:30","Anjeer Juice","2","bowl",""],
+      ["2026-01-01","21:30","Dal Khichdi + Juice","1","bowl",""],
+
+      /* 02-01-2026 */
+      ["2026-01-02","09:30","Sheera","2","bowl","Water 20 ml"],
+      ["2026-01-02","12:30","Beetroot Juice","1","bowl",""],
+      ["2026-01-02","15:30","Nachni","1","bowl","Water 5 ml"],
+      ["2026-01-02","18:30","Anjeer Juice","1","bowl","Water 5 ml"],
+      ["2026-01-02","21:30","Dal Khichdi","0.5","bowl","Water 20 ml"],
+
+      /* 03-01-2026 */
+      ["2026-01-03","09:30","Sheera","1.5","bowl","Water 20 ml"],
+      ["2026-01-03","11:30","Beetroot Juice","1","bowl",""]
+    ];
+
+    const wtx=db.transaction("log","readwrite");
+    rows.forEach(r=>{
+      wtx.objectStore("log").put({
+        id: Date.now() + Math.random(),
+        date: r[0],
+        time: r[1],
+        food: r[2],
+        qty: r[3],
+        unit: r[4],
+        notes: r[5]
+      });
+    });
+  };
 }
+</script>
 </script>
 
 </body>
