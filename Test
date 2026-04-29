@@ -1,0 +1,58 @@
+Option A — Use Domain-Wide Delegation (DWD)
+Backend acts as the user, so no sharing is needed.
+How it works
+Plain text
+User pastes Sheet URL
+   ↓
+Backend extracts sheetId
+   ↓
+Service account impersonates user@company.com
+   ↓
+Reads sheet via API (no sharing)
+What you need
+Google Workspace (company domain)
+Admin enables DWD
+In code:
+Java
+credentials.createDelegated("user@company.com");
+Pros
+✔ No manual sharing
+✔ Clean UX (URL paste works directly)
+✔ Works with user-owned sheets
+Cons
+❗ Needs admin approval
+❗ Higher security scrutiny
+🥈 Option B — OAuth (User Login)
+User logs in with Google → you use their token.
+Flow
+Plain text
+User login with Google
+   ↓
+Paste URL
+   ↓
+Backend uses OAuth token
+   ↓
+Reads sheet
+Pros
+✔ No sharing
+✔ No admin setup
+Cons
+❗ Token handling (expiry, refresh)
+❗ More implementation effort
+🥉 Option C — Change ownership model (best long-term)
+Don’t let users own the sheet.
+Flow
+Plain text
+Backend creates sheet (service account owns)
+   ↓
+Shares with user
+   ↓
+User edits
+   ↓
+Backend reads (no sharing needed later)
+Pros
+✔ Fully controlled
+✔ No dependency on user sharing
+✔ Simplest backend
+Cons
+❗ Doesn’t support “user’s own sheet” scenario
