@@ -1,58 +1,32 @@
-Option A — Use Domain-Wide Delegation (DWD)
-Backend acts as the user, so no sharing is needed.
-How it works
-Plain text
-User pastes Sheet URL
-   ↓
-Backend extracts sheetId
-   ↓
-Service account impersonates user@company.com
-   ↓
-Reads sheet via API (no sharing)
-What you need
-Google Workspace (company domain)
-Admin enables DWD
-In code:
-Java
-credentials.createDelegated("user@company.com");
-Pros
-✔ No manual sharing
-✔ Clean UX (URL paste works directly)
-✔ Works with user-owned sheets
-Cons
-❗ Needs admin approval
-❗ Higher security scrutiny
-🥈 Option B — OAuth (User Login)
-User logs in with Google → you use their token.
-Flow
-Plain text
-User login with Google
-   ↓
-Paste URL
-   ↓
-Backend uses OAuth token
-   ↓
-Reads sheet
-Pros
-✔ No sharing
-✔ No admin setup
-Cons
-❗ Token handling (expiry, refresh)
-❗ More implementation effort
-🥉 Option C — Change ownership model (best long-term)
-Don’t let users own the sheet.
-Flow
-Plain text
-Backend creates sheet (service account owns)
-   ↓
-Shares with user
-   ↓
-User edits
-   ↓
-Backend reads (no sharing needed later)
-Pros
-✔ Fully controlled
-✔ No dependency on user sharing
-✔ Simplest backend
-Cons
-❗ Doesn’t support “user’s own sheet” scenario
+. UI Layer (Frontend)
+The UI uses a custom JavaScript file (e.g., gis-picker-integration.js) to integrate the Google Drive Picker and Google Identity Services (GIS).
+When the user clicks the "Import from Google Drive" button:
+The GIS OAuth flow is triggered to authenticate the user and obtain a Google access token.
+The Google Drive Picker API is launched, allowing the user to select a file (usually a Google Sheet).
+Once a file is picked, the Picker returns a fileId and fileName.
+Yes, the Google Drive Picker API is used on the UI side.
+
+2. UI → Backend Communication
+The UI sends a POST request to the backend endpoint /bulk-upload-service/bulk-upload/importFromGoogleDrive.
+The request body contains:
+fileId (from Picker)
+fileName (from Picker)
+The request includes a user header (serialized user info, typically set by the gateway or UI).
+3. Backend Controller
+BulkUploadController#importFromGoogleDrive receives the request.
+It:
+Deserializes the user header.
+Validates fileId (must not be null/empty).
+Calls the service layer: bulkUploadService.importFromGoogleDrive(fileId, fileName, user).
+4. Backend Service
+BulkUploadServiceImpl#importFromGoogleDrive:
+Validates fileId.
+Calls googleSheetsClient.readRows(fileId, user) to fetch rows from the selected Google Sheet.
+Maps the rows to DataSourceCriteria objects.
+Calls bulkUploadDao.bulkSarfUpdate(criteria) to update the database.
+If successful, queues a Locus API call for further processing.
+5. Summary
+Picker API is used in the UI to let the user select a file from Google Drive.
+The backend does not interact with the Picker API directly; it receives the fileId and processes the file via Google Sheets API.
+The flow is:
+UI (Picker + GIS) → Backend Controller → Service → DAO/Database
